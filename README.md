@@ -6,8 +6,12 @@ There are two code files corresponding to the -O0 and -O3 compilation levels, re
 For example, in the O0_level directory:
 
 - `collect_traces/`    stores the scripts for collecting power traces.
+
 - `data/`    contains the collected power trace datasets.
+
 - `data_k/`    stores the generated secret key data.
+
+  
 
 ## Folder Structure
 ```
@@ -30,4 +34,12 @@ main_folder/
     ├── sca_preprocess.py                 # Preprocessing toolkit for side-channel attack scripts
     └── Template_multiplication.py         # Template construction for mantissa multiplication
 ```
+
+
+
+## Note
+
+When collecting attack traces, since we only care about the multiplication operations in the first layer of FFT, we made a modification to the FFT code so that FFT only executes the first layer.
+
+Due to equipment limitations, we collected the power traces of the three operations of interest (FP conversion, normalization procedure, and mantissa multiplication) in three segments in the attack phase. In fact, if the equipment allows (such as an oscilloscope), we can collect a long trace and then divide the long trace into three segments of interest.
 
