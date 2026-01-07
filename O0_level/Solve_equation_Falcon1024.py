@@ -206,7 +206,7 @@ if __name__ == "__main__":
     run_experiments(
         f_dir="./data_k_guess_1024",    # The directory where f_guess_i.pkl is located
         g_dir="./data_k_guess_1024",    # The directory where g_guess_i.pkl is located
-        h_csv_path="./k_guess_data/Falcon_h_1024_1000.csv",
+        h_csv_path="./data_k/Falcon_h_1024_1000.csv",
         out_csv_path="./data_k_guess_1024/f_results_1024.csv",
         num=100
     )
