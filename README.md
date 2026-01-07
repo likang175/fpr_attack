@@ -41,5 +41,5 @@ main_folder/
 
 When collecting attack traces, since we only care about the multiplication operations in the first layer of FFT, we made a modification to the FFT code so that FFT only executes the first layer.
 
-Due to equipment limitations, we collected the power traces of the three operations of interest (FP conversion, normalization procedure, and mantissa multiplication) separately during the attack phase. In fact, if the equipment allows it (such as an oscilloscope), we can collect a long trace and then divide it into three segments of interest
+Due to equipment limitations, we collected the power traces of the three operations of interest (FP conversion, normalization procedure, and mantissa multiplication) separately during the attack phase.  Actually, we can collect a single long trace and then divide it into three segments of interest if we use more powerful equipments (such as an oscilloscope).
 
