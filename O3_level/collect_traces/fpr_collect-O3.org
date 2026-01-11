@@ -1,0 +1,744 @@
+* Common code blocks
+
+** Common
+
+#+begin_src python :session :results silent
+OPT = "-O3"
+TESTFILE = 'fpr_smallint_and_FFT_f_one_layer'
+N_trace_O3_attack = 50  # #trace/signature to guarantee full key recovery
+#+end_src
+
+#+begin_src python :session :results silent
+FALCON_N = 512
+FALCON_LOGN = 9
+#+end_src
+
+Collect the traces of two keys =f= and =g= resp, by running the following blocks for second times.
+
+#+begin_src python :session :results silent
+key_name = 'f'  # change 'f' to 'g'
+#+end_src
+
+We pick the first 100 keys to test the attack:
+
+#+begin_src python :session :results silent
+N_key = 100
+key_start_from = 0
+#+end_src
+
+
+** Collect
+
+#+begin_src python :session :results silent
+import os
+import time
+import math
+import numpy as np
+import pandas as pd
+import chipwhisperer as cw
+import subprocess
+from tqdm import trange, tnrange
+from setup_generic import hardware_setup, scope_reset, tracewhisperer_husky_setup
+
+TARGET = 'stm32f4'
+SS_VER='SS_VER_1_1'
+
+subprocess.run(["make", "-B", "TESTFILE=%s"%TESTFILE, "OPT=%s"%OPT, "build"])
+subprocess.run(["bash", "saubere_lss.sh", "build-stm32f4/%s.lss"%TESTFILE, "%s%s.lss"%(TESTFILE, OPT)])
+
+# Should reserve at least 1 cycle as margin to clip
+INDEX_MARGIN = 1
+#+end_src
+
+#+begin_src python :session :results silent
+PROGRAM = True
+scope, target = hardware_setup(
+        "build-%s/%s.hex"%(TARGET, TESTFILE), TARGET, SS_VER, PROGRAM)
+scope_reset(scope, TARGET)
+trace = tracewhisperer_husky_setup(scope, target)
+
+# scope.clock
+clkgen_freq0 = scope.clock.clkgen_freq  # 7363636.363636363
+scope.clock.clkgen_freq = 30E6
+# scope.clock.adc_mul = 4
+
+# scope.gin
+scope.gain.db = 12
+
+# target.baud
+tmp_target_baud = target.baud
+target.baud = int(tmp_target_baud *
+                  (scope.clock.clkgen_freq / clkgen_freq0))
+#+end_src
+
+#+begin_src python :session :results silent
+def get_addr(text, cmd, addr_shift, addr_rel_start, addr_rel_end, match, scope, target, trace):
+    trace.set_isync_matches(addr_shift + addr_rel_start, addr_shift + addr_rel_end, match=match)
+    trace.arm_trace()
+    scope.arm()
+    target.simpleserial_write(cmd, text)
+    ret = scope.capture()
+    if ret:
+        print('Timeout happened during acquisition')
+    # print(response)
+    scope.get_last_trace()
+    raw = trace.read_capture_data()
+    times = trace.get_rule_match_times(raw, rawtimes=False, verbose=False)
+    return times
+#+end_src
+
+#+begin_src python :session :results silent
+def int8_to_uint8_bytes(int_list):
+    int_array = np.array(int_list, dtype=np.int8)
+    uint8_array = int_array.astype(np.uint8)
+    return bytearray(uint8_array)
+
+def send_sk(cmd, sk_ele):
+    for i in range(FALCON_N // 32):  # If Falcon n = 512, this is 16; else n = 1024, this is 32
+        target.simpleserial_write(cmd, sk_ele[i*32:(i+1)*32])
+        ret = target.simpleserial_read('r', 1)
+        # print(int.from_bytes(ret, byteorder='little'))
+        # print("ret:", end=" ")
+        # print(ret[0],end=" ")
+        # if ret[0] != i:
+        #     raise ValueError(f"MCU response mismatch at block {i}, got {ret[0]}")
+#+end_src
+
+#+begin_src python :session :results silent
+def collect_trace_per_key(scope, target):
+    text = bytearray(FALCON_LOGN.to_bytes(1, byteorder='little'))
+
+    scope.arm()
+    target.simpleserial_write('p', text)
+    ret = scope.capture()
+    if ret:
+        print('Timeout happened during acquisition at', i)
+    response = target.simpleserial_read('r', 1)
+    print(int.from_bytes(response, signed=True))
+    traces = scope.get_last_trace()
+    return traces
+#+end_src
+
+
+* Collect Attacked Traces
+
+** Load keys
+
+#+begin_src python :session :results silent
+N_rows = 1000  # read the first 100 rows. 'header=None' b.c. no csv header.
+df = pd.read_csv(f'keys/Falcon{FALCON_N}_{key_name}_1000.csv', header=None, nrows=N_rows)
+
+# #col/row should be consistence with FALCON_N
+if df.shape[1] != FALCON_N:
+    raise ValueError(f"#col/row is not {FALCON_N}, instead {df.shape[1]}")
+
+key_list = df.values.tolist()
+#+end_src
+
+#+begin_src python :session :results output :exports both
+test_key_list = key_list[key_start_from : key_start_from + N_key]
+print(len(key_list))
+print(key_list[0][0:N_key])
+print(test_key_list[0])
+#+end_src
+
+#+RESULTS:
+: 1000
+: [-2, 10, 3, 2, -3, -3, 3, -4, 3, 3, 1, 5, 3, 2, -1, -5, -4, 4, 4, -1, 7, -6, 7, 5, 0, 2, 2, -5, -5, -1, -6, 5, -1, 6, -2, -3, 2, -1, -7, 0, -1, -2, 9, 0, -1, 2, 1, 3, 2, 4, 0, -3, 3, 2, -2, -1, 2, 2, 2, -4, -3, 6, -2, 0, -4, 1, 6, -3, -3, 2, 1, -2, 5, -1, 4, -1, 0, 7, -3, 4, -4, -4, -5, -1, -2, -2, 2, -2, 2, -4, -4, -2, 3, 1, 2, 0, -5, 3, -1, 8]
+: [-2, 10, 3, 2, -3, -3, 3, -4, 3, 3, 1, 5, 3, 2, -1, -5, -4, 4, 4, -1, 7, -6, 7, 5, 0, 2, 2, -5, -5, -1, -6, 5, -1, 6, -2, -3, 2, -1, -7, 0, -1, -2, 9, 0, -1, 2, 1, 3, 2, 4, 0, -3, 3, 2, -2, -1, 2, 2, 2, -4, -3, 6, -2, 0, -4, 1, 6, -3, -3, 2, 1, -2, 5, -1, 4, -1, 0, 7, -3, 4, -4, -4, -5, -1, -2, -2, 2, -2, 2, -4, -4, -2, 3, 1, 2, 0, -5, 3, -1, 8, -5, -2, 5, -1, 2, -8, 4, -2, 0, -11, -4, 3, 7, -4, 4, 2, 6, 1, -2, -2, 2, -3, -1, -4, -2, -2, 2, 2, 1, 1, 1, -6, 7, 6, 1, 5, -1, 5, -7, 5, 6, 0, 3, -6, -1, 5, -10, -2, 6, -4, -1, -4, 5, 4, 5, 0, -4, 4, 1, 3, 1, 2, 3, -7, 4, -3, 2, -9, -2, 3, 3, -1, -2, -2, -5, -7, 4, -3, 6, 0, 7, 2, -1, 0, 2, -6, 2, 2, -1, 4, -1, -2, 2, 1, 3, -1, -5, -6, 5, -3, -3, -4, 8, 3, 1, -2, -1, 1, -1, -8, 0, 0, 8, 5, 7, 1, 4, 0, 0, -5, 5, -2, 1, -3, 7, -6, 3, 2, 5, 4, 5, 1, 4, -5, 7, 1, 1, -7, -2, -3, -3, -5, -5, -9, -6, -4, -4, 1, -3, -4, 0, -6, 2, 1, 2, 2, 5, 2, 1, 5, -2, 8, 0, 3, -2, -2, -3, 0, 1, 2, -2, -2, -6, -2, 3, 8, 0, -4, 8, 0, 6, -1, -3, -3, 3, -3, 7, -4, 1, -2, 1, 4, 4, -6, 0, 2, 2, 1, 0, -3, 6, 1, -1, -1, -2, 5, -1, 1, 2, -5, 0, -5, -4, 4, -11, 0, 2, 5, -2, 0, 5, 3, 1, -1, -5, -1, -9, 4, -1, -6, -1, -3, -6, 5, -5, 0, 10, 2, 7, -3, -6, 0, -3, -4, -2, 4, -1, -5, -2, 6, 6, 2, -5, -4, -5, 2, 0, -6, -2, 1, -5, -1, 5, 6, 0, -4, -3, 1, 2, 5, 1, 1, 8, -1, 0, -5, 2, 1, 0, 4, 3, 2, 0, 0, 0, -1, 0, -6, 2, -1, -5, -2, 7, 5, 5, 0, 0, 3, -8, -3, 3, -1, -4, -2, 0, -6, 7, -7, -2, -3, 2, -4, -5, 2, 4, -3, 10, -5, 6, -4, 1, 2, 2, 1, 4, 2, -3, 5, 1, 1, 0, -2, -6, -5, -1, -1, 10, -7, 6, 7, 4, -3, 10, 0, 2, -4, -2, 0, -2, 6, -5, -5, 2, 6, 2, 1, -4, 0, -3, 0, -2, 2, -3, 2, 3, 0, -3, 3, 5, 10, 3, -1, -5, 9, -1, -4, 4, 2, -3, 1, 4, -6, -4, -4, -4, 2, -8, 5, -3, -12, 3, 3, 4, 4, 7, -3, 1, 5, 6, 4, 5, 8, -2, -5, 1, -4, 3, 4, 3, -1, -2, 3]
+
+
+** fpr_scaled
+
+In O3, The interval between two addresses are too short, that TraceWhisperer fails to capture them at the same time. So we use "0" and "1" to capture =addr0= and =addr1= resp and put them together.
+
+#+begin_src python :session :results silent
+i = 0
+print(f"this is {i}-th key")
+key = key_list[i]
+# send sk
+send_sk('k', int8_to_uint8_bytes(key))
+# send a text msg
+text = bytearray([0]*1)
+text[0:1] = FALCON_LOGN.to_bytes(1, byteorder='little')
+# record times data
+times0 = get_addr(text, 'p', 0x8000500, 0x00, 0x182, 0, scope, target, trace)  # start
+times1 = get_addr(text, 'p', 0x8000500, 0x00, 0x182, 1, scope, target, trace)  # end
+#+end_src
+
+We measure =times0= and =times1= resp, because TraceWhisperer is incapable to make ='both'= works in O3. We can simply put =times0= and =times1= together
+
+#+begin_src python :session :results silent
+times = []
+assert len(times0) == len(times1)
+for i in range(len(times0)):
+    times.append(times0[i])
+    print(f"{times[-1][0]:8} rule # {times[-1][1]}, delta = {times[-1][0]-times[-2][0] if len(times) > 1 else times[-1][0]}")
+    times.append(times1[i])
+    print(f"{times[-1][0]:8} rule # {times[-1][1]}, delta = {times[-1][0]-times[-2][0]}")
+#+end_src
+
+Explanation to the exampled print out:
+
+In =sign.c= the =smallints_to_fpr=, there are 4 times consecutive calling of =fpr_scaled=, so
+
+#+begin_example
+this is 0-th key
+      33 rule # 0, delta = 33     // f[0] scaled start
+     154 rule # 0, delta = 121    // f[0] scaled end
+     193 rule # 0, delta = 39     // f[0] scaled start
+     314 rule # 0, delta = 121    // f[0] scaled end
+...
+   81633 rule # 0, delta = 39     // f[510] scaled start
+   81754 rule # 0, delta = 121    // f[510] scaled end
+   81793 rule # 0, delta = 39     // f[511] scaled start
+   81914 rule # 0, delta = 121    // f[511] scaled 1end
+#+end_example
+
+Note: the beginning =33= is different from other =39=, due to the "bootstrap" of =f[0]=.
+
+#+begin_src python :session :results output :exports both
+print(times[0])
+print(times[-1])
+print(len(times))
+#+end_src
+
+#+RESULTS:
+: [33, 0]
+: [81914, 0]
+: 1024
+
+This means, calling =fpr_scaled= for 512 times, requires CPU cycles =81914=.
+
+#+begin_src python :session :results output :exports both
+TOTAL_SAMPLES = times[-1][0] * 4
+scope.adc.samples = 130000
+segments = math.ceil(TOTAL_SAMPLES / scope.adc.samples)
+print(f"the total segments is {segments}")
+#+end_src
+
+#+RESULTS:
+: the total segments is 3
+
+#+begin_src python :session :results silent
+def get_traces(N_trace, TOTAL_SAMPLES, times, key_idx):
+    """Collect long trace for a specific key, and save the start/end of the scaled op."""
+    smallints_traces = []
+    for i in range(N_trace):
+        scope.adc.offset = 0
+        wave = np.array([])
+        labels = np.array([])
+        wave_clip_set = []
+        for j in range(segments):
+            tmp_trace = collect_trace_per_key(scope, target)
+            tmp_trace = np.array(tmp_trace)
+            wave = np.append(wave, tmp_trace)
+            # labels = np.append(labels, tmp_label)
+            scope.adc.offset += scope.adc.samples
+            print(f"segment {j} OK")
+        for u in range(FALCON_N):
+            start_idx = times[2*u][0]*4
+            end_idx = times[2*u+1][0]*4
+            wave_clip_set.append(wave[start_idx:end_idx])
+        smallints_traces.append(wave_clip_set)
+        print(f"key{key_idx}, N={i} finished")
+    return smallints_traces
+#+end_src
+
+#+begin_src python :session :results silent
+for i in trange(N_key, desc='Capturing traces'):
+    # send sk
+    key = test_key_list[i]
+    send_sk('k',int8_to_uint8_bytes(key))
+    # collect traces
+    offset_trace = get_traces(N_trace_O3_attack, TOTAL_SAMPLES, times, i)
+    offset_trace = np.array(offset_trace)
+    print(offset_trace.shape)
+    np.save(f'data{OPT}/falcon{FALCON_N}_attack/fpr_scaled/'
+            f'{i}th_{key_name}_{N_trace_O3_attack}traces.npy', offset_trace)
+    print(f"message {i} finished")
+#+end_src
+
+#+begin_example
+-2
+segment 0 finished
+-2
+segment 1 finished
+-2
+...
+9
+segment 2 finished
+key99, N=19 finished
+(20, 512, 484)
+message 99 finished
+#+end_example
+
+
+** fpr_mul
+
+*** Determine address (Be careful of the abnormal value)
+
+**** Determine two addresses =tims0= and =times1= resp
+
+In O3, The interval between two addresses are too short, that TraceWhisperer fails to capture them at the same time. So we use "0" and "1" to capture =addr0= and =addr1= resp and put them together.
+
+#+begin_src python :session :results silent
+i = 0  # try some other keys (from 0 to N_key-1 (99))
+print(f"this is {i}-th key")
+key = key_list[i]
+# send sk
+send_sk('k',int8_to_uint8_bytes(key))
+# send a text msg
+text = bytearray([0]*1)
+text[0:1] = FALCON_LOGN.to_bytes(1, byteorder='little')
+# record times data
+times0 = get_addr(text, 'p', 0x800091c, 0x34, 0x76, 0, scope, target, trace)  # mul x1*y0
+time.sleep(1)
+times1 = get_addr(text, 'p', 0x800091c, 0x34, 0x76, 1, scope, target, trace)  # shift 55
+assert len(times0) == len(times1)
+print(f'{i}-th key raw addr OK')
+#+end_src
+
+You will probably notice that the length is not exactly 512/1024, but less.
+
+Though the addr diff is quite periodic, however, there are one (Falcon 512) or two (Falcon 1024) abnormal values in both =times0= and =times1=. The reason to this abnormal value is still unknown, but we can still push forward. First we should perform a sanity check:
+
+#+begin_src python :session :results silent
+assert len(times0) == len(times1)
+if FALCON_N == 512:
+    len(times0) == 511
+if FALCON_N == 1024:
+    len(times0) == 1020
+#+end_src
+
+
+**** Subtract two times
+
+We measure =times0= and =times1= resp, because TraceWhisperer is incapable to make ='both'= works in O3. We can simply put =times0= and =times1= together
+
+#+begin_src python :session :results silent
+times = []
+diff = []
+for i in range(len(times0)):
+    times.append(times0[i])  # (
+    diff.append(times[-1][0]-times[-2][0] if len(times) > 1 else times[-1][0])
+    print(f"{times[-1][0]:8} rule # {times[-1][1]}, delta = {diff[-1]}")
+    times.append(times1[i])
+    diff.append(times[-1][0]-times[-2][0])
+    print(f"{times[-1][0]:8} rule # {times[-1][1]}, delta = {diff[-1]}")
+if FALCON_N == 512:
+    len(times) == 1022
+if FALCON_N == 1024:
+    len(times) == 2040
+#+end_src
+
+
+**** Remove abnormal
+
+For Falcon 512 and Falcon 1024, both of them have issues on =times[582]= and =times[1450]=. We observe that for Falcon 512 the key 0 there is =times[582][0]-times[581][0] = 1408=, which is quite different from other =129?=. Luckily, if we decompose =1408= to =97+19+1292=, things turn to normal.
+
+Upon this =140?= error, Falcon 512 has ONE, and Falcon 1024 has TWO.
+
+Similar issue happens in Falcon 1024. We observe that the key 0 there is =times[1160][0]-times[1159][0] = 434=, which is quite different from other =31?=. Luckily, still if we decompose =434= to =97+19+318=, things turn to normal.
+
+Upon this =43?= error, Falcon 1024 has TWO.
+
+So we use the following trick to remove the abnormal values.
+
+#+begin_src python :session :results silent
+def rm_abnormal(defected_times, defected_diff, idx, fix_val):
+    assert fix_val == 97 or fix_val == 94
+    times = defected_times[:idx]
+    diff  = defected_diff[:idx]
+    diff.append(fix_val)
+    diff.append(19)
+    diff.append(defected_diff[idx] - fix_val - 19)
+    for i in range(-3, 0):
+        times.append([times[-1][0] + diff[i], 0])
+    assert times[-1][0] == defected_times[idx][0]
+    times.extend(defected_times[idx + 1:])
+    diff.extend(defected_diff[idx + 1:])
+    return times, diff
+
+def falcon512_rm_abnormal(times, diff, verbose=False):
+    """Rm abnormal in 'times' of Falcon512 (has ONE)."""
+    arr = np.array(diff)
+    abnormal_idx = np.where((1405 <= arr) & (arr <= 1415))[0]  # ))
+    abnormal_val = arr[abnormal_idx]
+    for idx in range(len(abnormal_idx)):
+        print(f'Defect val {abnormal_val[idx]:4} at {abnormal_idx[idx]:4}')
+    times, diff = rm_abnormal(times, diff, abnormal_idx[0], 94)  # Falcon512 has only ONE abnormal
+    for i in range(len(times)):
+        if verbose:
+            print(f"{times[i][0]:8} rule # {times[i][1]}, delta = {diff[i]}")
+    return times, diff
+
+def falcon1024_rm_abnormal(times, diff, verbose=False):
+    arr = np.array(diff)
+    abnormal_idx = np.where(((1405 <= arr) & (arr <= 1415)) | ((430 <= arr) & (arr <= 440)))[0]  # ))
+    abnormal_val = arr[abnormal_idx]
+    for idx in range(len(abnormal_idx)):
+        print(f'Defect val {abnormal_val[idx]:4} at {abnormal_idx[idx]:4}')
+    times, diff = rm_abnormal(times, diff, abnormal_idx[0] + 0, 94)
+    times, diff = rm_abnormal(times, diff, abnormal_idx[1] + 2, 97)
+    times, diff = rm_abnormal(times, diff, abnormal_idx[2] + 4, 94)
+    times, diff = rm_abnormal(times, diff, abnormal_idx[3] + 6, 97)
+    for i in range(len(times)):
+        if verbose:
+            print(f"{times[i][0]:8} rule # {times[i][1]}, delta = {diff[i]}")
+    return times, diff
+#+end_src
+
+#+begin_src python :session :results silent
+if FALCON_N == 512:
+    times, diff = falcon512_rm_abnormal(times, diff, True)
+if FALCON_N == 1024:
+    times, diff = falcon1024_rm_abnormal(times, diff, True)
+#+end_src
+
+
+**** Let's stop by and review
+
+After the above three procedures, we eventually yield a "well-behaved" =times= as =fpr_scaled=. However, we notice that the =times= variate among keys. Take a look at =times[-1]=, for the first five keys:
+
+- 0th key: [321513, 0]
+- 1st key: [321543, 0]
+- 2nd key: [321529, 0]
+- 3rd key: [321512, 0]
+- 4th key: [321529, 0]
+
+The abnormal value is also different (the index of the abnormal could be variate, but at least for the first five keys they are the same):
+
+- 0th key: 1408
+- 1st key: 1411
+- 2nd key: 1408
+- 3rd key: 1410
+- 4rd key: 1410
+
+So we design the following procedures to record the =times= of all different keys from 0 to =N_key-1= (here 99).
+
+
+**** Together
+
+#+begin_src python :session :results silent
+times_dict = {}
+#+end_src
+
+#+begin_src python :session :results silent
+def determine_times(verbose=False):
+    # send a text msg
+    text = bytearray([0]*1)
+    text[0:1] = FALCON_LOGN.to_bytes(1, byteorder='little')
+    # record times data
+    times0 = get_addr(text, 'p', 0x800091c, 0x34, 0x76, 0, scope, target, trace)  # mul x1*y0
+    times1 = get_addr(text, 'p', 0x800091c, 0x34, 0x76, 1, scope, target, trace)  # shift 55
+    # sanity check
+    assert len(times0) == len(times1)
+    if FALCON_N == 512:
+        len(times0) == 511
+    if FALCON_N == 1024:
+        len(times0) == 1020
+    # put them together
+    times = []
+    diff = []
+    for i in range(len(times0)):
+        times.append(times0[i])  # (
+        diff.append(times[-1][0]-times[-2][0] if len(times) > 1 else times[-1][0])
+        if verbose:
+            print(f"{times[-1][0]:8} rule # {times[-1][1]}, delta = {diff[-1]}")
+        times.append(times1[i])
+        diff.append(times[-1][0]-times[-2][0])
+        if verbose:
+            print(f"{times[-1][0]:8} rule # {times[-1][1]}, delta = {diff[-1]}")
+    if FALCON_N == 512:
+        times, diff = falcon512_rm_abnormal(times, diff)
+    if FALCON_N == 1024:
+        times, diff = falcon1024_rm_abnormal(times, diff)
+    # print(diff[largest2_idx - 6 : largest2_idx + 9])
+    return times
+#+end_src
+
+#+begin_src python :session :results silent
+key_th = 0
+scope.adc.samples = 130000
+while key_th < N_key:  # >
+    print(f"============= key-th {key_th} ================")
+    try:
+        # send sk
+        key = test_key_list[key_th]
+        send_sk('k',int8_to_uint8_bytes(key))
+        times_dict[key_th] = determine_times()
+        key_th += 1
+        time.sleep(2)
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+        print("You should restart ChipWhisperer.")
+        break
+#+end_src
+
+Save =times_dict=:
+
+#+begin_src python :session :results silent
+import pickle
+
+with open(f'data{OPT}/falcon{FALCON_N}_attack/times_{key_name}_dict.pkl', 'wb') as f:
+    pickle.dump(times_dict, f)
+#+end_src
+
+Read to debug:
+
+#+begin_src python :session :results silent
+key_th = 0
+times = times_dict[key_th]
+for i in range(len(times)):
+    print(f"{times[i][0]:8} rule # {times[i][1]}, delta = {times[i][0]-times[i-1][0] if i > 0 else times[i][0]}")
+#+end_src
+
+Load from the saved file:
+
+#+begin_src python :session :results silent
+import pickle
+
+with open(f'data{OPT}/falcon{FALCON_N}_attack/times_{key_name}_dict.pkl', 'rb') as f:
+    times_dict = pickle.load(f)
+#+end_src
+
+Explanation to the exampled print out:
+
+In =fft.c= the =FPC_MUL=, there are =fpr_sub= and =fpr_add= resp, each of them contains two =fpr_mul=, so
+
+#+begin_example
+   82058 rule # 0, delta = 82058   // f[0] sub 1st mul x1*y0
+   82077 rule # 0, delta = 19      // f[0] sub 1st shift 55
+   82174 rule # 0, delta = 97      // f[0] sub 2nd mul x1*y0
+   82193 rule # 0, delta = 19      // f[0] sub 2nd shift 55
+   82512 rule # 0, delta = 319     // f[0] add 1st mul x1*y0
+   82531 rule # 0, delta = 19      // f[0] add 1st shift 55
+   82625 rule # 0, delta = 94      // f[0] add 2nd mul x1*y0
+   82644 rule # 0, delta = 19      // f[0] add 2nd shift 55
+   83942 rule # 0, delta = 1298    // f[1] sub 1st mul x1*y0
+   83961 rule # 0, delta = 19      // f[1] sub 1st shift 55
+   84058 rule # 0, delta = 97      // f[1] sub 2nd mul x1*y0
+   84077 rule # 0, delta = 19      // f[1] sub 2nd shift 55
+   84396 rule # 0, delta = 319     // f[1] add 1st mul x1*y0
+   84415 rule # 0, delta = 19      // f[1] add 1st shift 55
+   84509 rule # 0, delta = 94      // f[1] add 2nd mul x1*y0
+   84528 rule # 0, delta = 19      // f[1] add 2nd shift 55
+   85826 rule # 0, delta = 1298    // f[2] sub 1st mul x1*y0
+...
+  319500 rule # 0, delta = 319     // f[510] add 1st mul x1*y0
+  319519 rule # 0, delta = 19      // f[510] add 1st shift 55
+  319613 rule # 0, delta = 94      // f[510] add 2nd mul x1*y0
+  319632 rule # 0, delta = 19      // f[510] add 2nd shift 55
+  320928 rule # 0, delta = 1296    // f[511] sub 1st mul x1*y0
+  320947 rule # 0, delta = 19      // f[511] sub 1st shift 55
+  321044 rule # 0, delta = 97      // f[511] sub 2nd mul x1*y0
+  321063 rule # 0, delta = 19      // f[511] sub 2nd shift 55
+  321381 rule # 0, delta = 318     // f[511] add 1st mul x1*y0
+  321400 rule # 0, delta = 19      // f[511] add 1st shift 55
+  321494 rule # 0, delta = 94      // f[511] add 2nd mul x1*y0
+  321513 rule # 0, delta = 19      // f[511] add 2nd shift 55
+#+end_example
+
+Note: the beginning =82058= is different from other =129x= ("=x=" differ) due to the "bootstrap" of =f[0]=.
+
+
+*** Collect traces
+
+#+begin_src python :session :results output :exports both
+N_sample_max = 0
+key_th_max_sample = 0
+for key_th in range(N_key):
+    times = times_dict[key_th]
+    print(times[0], times[-1], len(times))  # <
+    if times[-1][0] >= N_sample_max:
+        N_sample_max = times[-1][0]
+        key_th_max_sample = key_th
+        print(f'max #sample appears at {key_th}')
+#+end_src
+
+#+RESULTS:
+#+begin_example
+[82058, 0] [321513, 0] 1024
+max #sample appears at 0
+[82058, 0] [321543, 0] 1024
+max #sample appears at 1
+[82058, 0] [321529, 0] 1024
+[82058, 0] [321512, 0] 1024
+[82058, 0] [321529, 0] 1024
+[82058, 0] [321534, 0] 1024
+[82058, 0] [321524, 0] 1024
+[82058, 0] [321576, 0] 1024
+max #sample appears at 7
+[82058, 0] [321520, 0] 1024
+[82058, 0] [321539, 0] 1024
+[82058, 0] [321516, 0] 1024
+[82058, 0] [321510, 0] 1024
+[82058, 0] [321550, 0] 1024
+[82058, 0] [321550, 0] 1024
+[82058, 0] [321531, 0] 1024
+[82058, 0] [321509, 0] 1024
+[82058, 0] [321535, 0] 1024
+[82058, 0] [321565, 0] 1024
+[82058, 0] [321568, 0] 1024
+[82058, 0] [321556, 0] 1024
+[82058, 0] [321545, 0] 1024
+[82058, 0] [321511, 0] 1024
+[82058, 0] [321529, 0] 1024
+[82058, 0] [321511, 0] 1024
+[82058, 0] [321559, 0] 1024
+[82058, 0] [321534, 0] 1024
+[82058, 0] [321498, 0] 1024
+[82058, 0] [321536, 0] 1024
+[82058, 0] [321536, 0] 1024
+[82058, 0] [321530, 0] 1024
+[82058, 0] [321541, 0] 1024
+[82058, 0] [321548, 0] 1024
+[82058, 0] [321550, 0] 1024
+[82058, 0] [321565, 0] 1024
+[82058, 0] [321517, 0] 1024
+[82058, 0] [321520, 0] 1024
+[82058, 0] [321551, 0] 1024
+[82058, 0] [321489, 0] 1024
+[82058, 0] [321531, 0] 1024
+[82058, 0] [321525, 0] 1024
+[82058, 0] [321503, 0] 1024
+[82058, 0] [321516, 0] 1024
+[82058, 0] [321528, 0] 1024
+[82058, 0] [321512, 0] 1024
+[82058, 0] [321534, 0] 1024
+[82058, 0] [321533, 0] 1024
+[82058, 0] [321519, 0] 1024
+[82058, 0] [321545, 0] 1024
+[82058, 0] [321513, 0] 1024
+[82058, 0] [321525, 0] 1024
+[82058, 0] [321501, 0] 1024
+[82058, 0] [321524, 0] 1024
+[82058, 0] [321494, 0] 1024
+[82058, 0] [321551, 0] 1024
+[82058, 0] [321552, 0] 1024
+[82058, 0] [321542, 0] 1024
+[82058, 0] [321544, 0] 1024
+[82058, 0] [321572, 0] 1024
+[82058, 0] [321547, 0] 1024
+[82058, 0] [321546, 0] 1024
+[82058, 0] [321551, 0] 1024
+[82058, 0] [321533, 0] 1024
+[82058, 0] [321532, 0] 1024
+[82058, 0] [321522, 0] 1024
+[82058, 0] [321513, 0] 1024
+[82058, 0] [321514, 0] 1024
+[82058, 0] [321532, 0] 1024
+[82058, 0] [321520, 0] 1024
+[82058, 0] [321566, 0] 1024
+[82058, 0] [321503, 0] 1024
+[82058, 0] [321521, 0] 1024
+[82058, 0] [321529, 0] 1024
+[82058, 0] [321491, 0] 1024
+[82058, 0] [321517, 0] 1024
+[82058, 0] [321529, 0] 1024
+[82058, 0] [321523, 0] 1024
+[82058, 0] [321491, 0] 1024
+[82058, 0] [321527, 0] 1024
+[82058, 0] [321524, 0] 1024
+[82058, 0] [321536, 0] 1024
+[82058, 0] [321561, 0] 1024
+[82058, 0] [321532, 0] 1024
+[82058, 0] [321535, 0] 1024
+[82058, 0] [321549, 0] 1024
+[82058, 0] [321552, 0] 1024
+[82058, 0] [321532, 0] 1024
+[82058, 0] [321541, 0] 1024
+[82058, 0] [321506, 0] 1024
+[82058, 0] [321517, 0] 1024
+[82058, 0] [321568, 0] 1024
+[82058, 0] [321552, 0] 1024
+[82058, 0] [321550, 0] 1024
+[82058, 0] [321496, 0] 1024
+[82058, 0] [321512, 0] 1024
+[82058, 0] [321528, 0] 1024
+[82058, 0] [321556, 0] 1024
+[82058, 0] [321517, 0] 1024
+[82058, 0] [321535, 0] 1024
+[82058, 0] [321549, 0] 1024
+[82058, 0] [321521, 0] 1024
+#+end_example
+
+This means, calling =fpr_mul= in FFT the first layer for 128 times with 4 interested operation insides, altogether require CPU cycles =321576=, and *this cycle is provided by the 7-th key*.
+
+#+begin_src python :session :results output :exports both
+TOTAL_SAMPLES = times_dict[key_th_max_sample][-1][0] * 4
+scope.adc.samples = 130000
+segments = math.ceil(TOTAL_SAMPLES / scope.adc.samples)
+print(f"the total segments is {segments}")
+#+end_src
+
+#+RESULTS:
+: the total segments is 10
+
+#+begin_src python :session :results silent
+cycles_diff = 22
+cycles_mul = 17
+
+def get_traces(N_trace, TOTAL_SAMPLES, times, key_idx):
+    """Collect long trace for a specific key, and save the start of the mul x1*y0 and shift 55 resp."""
+    multi_traces = []
+    diff_set_traces = []
+    for i in range(N_trace):
+        scope.adc.offset = 0
+        wave = np.array([])
+        labels = np.array([])
+        seg_mul_set = []
+        seg_diff_set = []
+        for j in range(segments):
+            tmp_trace = collect_trace_per_key(scope, target)
+            tmp_trace = np.array(tmp_trace)
+            wave = np.append(wave, tmp_trace)
+            # labels = np.append(labels, tmp_label)
+            scope.adc.offset += scope.adc.samples
+            print(f"segment {j} OK")
+        for u in range(FALCON_N):
+            start_idx_mul = times[2*u][0]*4
+            start_idx_diff = times[2*u+1][0]*4
+            seg_mul_set.append(wave[start_idx_mul : start_idx_mul + cycles_mul * 4])
+            seg_diff_set.append(wave[start_idx_diff : start_idx_diff + cycles_diff * 4])
+        multi_traces.append(seg_mul_set)
+        diff_set_traces.append(seg_diff_set)
+        print(f"key{key_idx}, N={i} finished")
+    return multi_traces, diff_set_traces
+#+end_src
+
+#+begin_src python :session :results silent
+for i in range(N_key):
+    # send sk
+    key = test_key_list[i]
+    send_sk('k',int8_to_uint8_bytes(key))
+    # collect traces
+    multi_traces, diff_set_traces = get_traces(N_trace_O3_attack,
+                                               TOTAL_SAMPLES,
+                                               times_dict[i], i)
+    multi_traces = np.array(multi_traces)
+    diff_set_traces = np.array(diff_set_traces)
+    print(multi_traces.shape)
+    print(diff_set_traces.shape)
+    np.save(f'data{OPT}/falcon{FALCON_N}_attack/fpr_mul/'
+            f'{i}th_{key_name}_multiply_{N_trace_O3_attack}traces.npy',
+            multi_traces)
+    np.save(f'data{OPT}/falcon{FALCON_N}_attack/fpr_mul/'
+            f'{i}th_{key_name}_shift_{N_trace_O3_attack}traces.npy',
+            diff_set_traces)
+    print(f"message {i} finished")
+#+end_src
+
+#+begin_example
+-2
+segment 0 OK
+...
+9
+segment 9 OK
+key99, N=19 finished
+(20, 512, 68)
+(20, 512, 88)
+message 99 finished
+#+end_example
+

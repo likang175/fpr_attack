@@ -1,3 +1,6 @@
 [submodule "cw-firmware-mcu"]
 	path = cw-firmware-mcu
 	url = https://github.com/OChicken/cw-firmware-mcu.git
+[submodule "PQClean"]
+	path = PQClean
+	url = https://github.com/PQClean/PQClean.git

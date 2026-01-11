@@ -1,0 +1,1 @@
+../../cw-firmware-mcu/setup_generic.py
