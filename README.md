@@ -43,3 +43,31 @@ When collecting attack traces, since we only care about the multiplication opera
 
 Due to equipment limitations, we collected the power traces of the three operations of interest (FP conversion, normalization procedure, and mantissa multiplication) separately during the attack phase.  Actually, we can collect a single long trace and then divide it into three segments of interest if we use more powerful equipments (such as an oscilloscope).
 
+
+## Package Dependencies
+
+### Python Packages
+
+Required for data analysis and attack implementation:
+
+- chipwhisperer, numpy, scipy, matplotlib, scikit-learn, pandas, tqdm
+- torch, torchinfo (required for deep learning-based attacks in O3_level)
+
+### C/Embedded Development
+
+Required for firmware compilation and deployment:
+
+- ARM GCC toolchain for STM32F4 microcontrollers
+- CMSIS_6 and STM32F3/F4 device libraries
+- ChipWhisperer firmware libraries
+
+### Submodule
+
+- [cw-firmware-mcu](https://github.com/OChicken/cw-firmware-mcu.git): ChipWhisperer firmware utilities providing convenient interfaces for data collection and analysis.
+
+**Note:** This project uses cw-firmware-mcu pinned at commit `7f5879e` (not the latest version), which was the stable version used during the development of this attack.
+
+To initialize the submodule:
+``` shell
+git submodule update --init
+```
