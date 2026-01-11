@@ -1,0 +1,3 @@
+[submodule "cw-firmware-mcu"]
+	path = cw-firmware-mcu
+	url = https://github.com/OChicken/cw-firmware-mcu.git
