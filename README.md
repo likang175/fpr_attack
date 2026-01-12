@@ -20,7 +20,7 @@ fpr_attack/
 │
 ├── O0_level/                             # Attack implementation for -O0 optimization level
 │   ├── collect_traces/                   # Scripts for collecting power traces
-│   ├── data/                             # Collected power trace data
+│   ├── data/                             # The file for storing the collected power trace data
 │   ├── data_k/                           # Generated key data
 │   ├── attack_falcon512(1024)_O0.ipynb   # Attack script for Falcon-512 and Falcon-1024 (-O0)
 │   ├── Solve_equation_Falcon512(1024).py # Script for recovering remaining key coefficients
@@ -28,14 +28,12 @@ fpr_attack/
 │
 └── O3_level/                             # Attack implementation for -O3 optimization level
     ├── collect_traces/                   # Scripts for collecting power traces
-    ├── data/                             # Collected power trace data (-O3)
+    ├── data/                             # The file for storing collected power trace data (-O3)
     ├── data_k/                           # Generated key data
+    ├── e2e/                              # Efficient scripts for recovering remaining key coefficients
     ├── attack_O3_ISD_Falcon512(1024).ipynb # Attack script for Falcon-512 and Falcon-1024 (-O3)
-    ├── Solve_equation_Falcon512(1024).py # Script for recovering remaining key coefficients
     ├── TA_discriminative.py              # Deep learning-based discriminative attack utilities
-    └── Template_multiplication.py        # Template construction for mantissa multiplication
 ```
-
 
 ## Package Dependencies
 
