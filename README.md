@@ -28,7 +28,7 @@ fpr_attack/
 │
 └── O3_level/                             # Attack implementation for -O3 optimization level
     ├── collect_traces/                   # Scripts for collecting power traces
-    ├── data/                             # The file for storing collected power trace data (-O3)
+    ├── data-O3-828/                      # The file for storing collected power trace data (-O3)
     ├── data_k/                           # Generated key data
     ├── e2e/                              # Efficient scripts for recovering remaining key coefficients
     ├── attack_O3_ISD_Falcon512(1024).ipynb # Attack script for Falcon-512 and Falcon-1024 (-O3)
