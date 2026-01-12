@@ -1,4 +1,4 @@
-This is the repo for the paper "One Fell Swoop: A Single-Trace Key-Recovery Attack on the Falcon Signing Algorithm". (Link:https://eprint.iacr.org/2025/2159.pdf)
+This is the repo for the paper "One Fell Swoop: A Single-Trace Key-Recovery Attack on the Falcon Signing Algorithm".
 
 ## Overview
 
@@ -56,7 +56,7 @@ Required for firmware compilation and deployment:
 
 - [PQClean](https://github.com/PQClean/PQClean.git): Post-quantum cryptographic implementations. This project uses the Falcon signature scheme implementation (provides `fpr.c` and related floating-point arithmetic functions).
 
-- [cw-firmware-mcu](https://github.com/OChicken/cw-firmware-mcu.git): ChipWhisperer firmware utilities providing convenient interfaces for data collection and analysis.
+- [cw-firmware-mcu]: ChipWhisperer firmware utilities providing convenient interfaces for data collection and analysis.
 
 **Note:** This project uses cw-firmware-mcu pinned at commit `7f5879e` (not the latest version), which was the stable version used during the development of this attack.
 
