@@ -1,8 +1,9 @@
-This is the repo for the paper One Fell Swoop: A Single-Trace Key-Recovery Attack on the Falcon Signing Algorithm. (Link:https://eprint.iacr.org/2025/2159.pdf)
+This is the repo for the paper "One Fell Swoop: A Single-Trace Key-Recovery Attack on the Falcon Signing Algorithm". (Link:https://eprint.iacr.org/2025/2159.pdf)
 
 ## Overview
 
-This repository contains implementations of single-trace key-recovery attacks on Falcon-512 and Falcon-1024 at two different compilation optimization levels (-O0 and -O3). Each implementation includes scripts for power trace collection, preprocessing, and complete key recovery.
+This repository contains implementations of the single-trace key-recovery attack under -O0 and the multi-trace attack under -O3 on Falcon.
+Each implementation includes scripts for power trace collection, preprocessing, and complete key recovery.
 
 
 ## Project Structure
