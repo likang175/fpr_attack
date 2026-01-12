@@ -16,7 +16,7 @@ fpr_attack/
 ├── PQClean/                              # Submodule: PQClean cryptographic library
 │   └── crypto_sign/falcon-*/             # Falcon signature implementation (provides fpr.c)
 │
-├── cw-firmware-mcu/                      # Submodule: ChipWhisperer firmware utilities (pinned at 7f5879e)
+├── cw-firmware-mcu/                      # ChipWhisperer firmware utilities
 │
 ├── O0_level/                             # Attack implementation for -O0 optimization level
 │   ├── collect_traces/                   # Scripts for collecting power traces
@@ -32,7 +32,7 @@ fpr_attack/
     ├── data_k/                           # Generated key data
     ├── e2e/                              # Efficient scripts for recovering remaining key coefficients
     ├── attack_O3_ISD_Falcon512(1024).ipynb # Attack script for Falcon-512 and Falcon-1024 (-O3)
-    ├── TA_discriminative.py              # Deep learning-based discriminative attack utilities
+    └── TA_discriminative.py              # Deep learning-based discriminative attack utilities
 ```
 
 ## Package Dependencies
@@ -55,10 +55,6 @@ Required for firmware compilation and deployment:
 ### Submodules
 
 - [PQClean](https://github.com/PQClean/PQClean.git): Post-quantum cryptographic implementations. This project uses the Falcon signature scheme implementation (provides `fpr.c` and related floating-point arithmetic functions).
-
-- [cw-firmware-mcu]: ChipWhisperer firmware utilities providing convenient interfaces for data collection and analysis.
-
-**Note:** This project uses cw-firmware-mcu pinned at commit `7f5879e` (not the latest version), which was the stable version used during the development of this attack.
 
 To initialize the submodules:
 ``` shell
