@@ -1,0 +1,33 @@
+# SPDX-License-Identifier: Apache-2.0 or CC0-1.0
+
+MPS2_DATA_IN_FLASH = 1
+VPATH += :$(HALPATH)/mps2
+SRC += mps2_hal.c
+EXTRAINCDIRS += $(HALPATH)/mps2
+
+ASRC += startup_MPS2.S
+
+MCU_FLAGS = -mcpu=cortex-m4
+
+CC = arm-none-eabi-gcc
+OBJCOPY = arm-none-eabi-objcopy
+OBJDUMP = arm-none-eabi-objdump
+SIZE = arm-none-eabi-size
+AR = arm-none-eabi-ar rcs
+NM = arm-none-eabi-nm
+
+#Output Format = Binary for this target
+FORMAT = binary
+
+CFLAGS += -mthumb -mfloat-abi=soft -fmessage-length=0 -ffunction-sections
+CPPFLAGS += -mthumb -mfloat-abi=soft -fmessage-length=0 -ffunction-sections
+ASFLAGS += -mthumb -mfloat-abi=hard -fmessage-length=0 -ffunction-sections -mfpu=fpv4-sp-d16
+ASFLAGS += $(if $(MPS2_DATA_IN_FLASH),-DDATA_IN_FLASH)
+
+CDEFS += -DSTM32F303xC -DSTM32F3 -DSTM32 -DDEBUG
+CPPDEFS += -DSTM32F303xC -DSTM32F3 -DSTM32 -DDEBUG
+
+LDSCRIPT = $(HALPATH)/mps2/MPS2.ld
+
+QEMU = qemu-system-arm
+QEMUFLAGS = -M mps2-an386 -nographic -semihosting
